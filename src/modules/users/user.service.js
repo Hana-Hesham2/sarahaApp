@@ -273,29 +273,33 @@ export const confirmLogin = async (req, res, next) => {
     throw new Error("Invalid or expired OTP");
   }
 
-  
   user.otp = null;
   user.otpExpires = null;
   await user.save();
 
-  
   const jwtid = randomUUID();
 
   const access_token = GenerateToken({
     payload: { id: user._id, email: user.email },
     secret_key: ACCESS_SECRET_KEY,
-    options: { expiresIn: 60 * 30, jwtid } 
+    options: {
+      expiresIn: 60 * 30,
+      jwtid
+    }
   });
 
   const refresh_token = GenerateToken({
     payload: { id: user._id, email: user.email },
     secret_key: REFRESH_SECRET_KEY,
-    options: { expiresIn: "1y", jwtid } 
+    options: {
+      expiresIn: "1y",
+      jwtid
+    }
   });
 
   successResponse({
     res,
-    message: "OTP confirmed, login successful",
+    message: "Successful Login",
     data: { access_token, refresh_token }
   });
 };
