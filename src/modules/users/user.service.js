@@ -129,15 +129,23 @@ export const resendOtp = async (req, res, next) => {
   });
 
   if (!user) {
-    throw new Error("user not exist");
+    throw new Error("User does not exist");
   }
 
-  await sendEmailOtp({
-    email,
-    subject: "confirmEmail" 
-  });
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-  return successResponse({ res });
+  user.otp = otp;
+  user.otpExpires = Date.now() + 5 * 60 * 1000;
+
+  await user.save();
+
+  await sendOTPEmail({ to: email, otp });
+
+
+  return successResponse({
+    res,
+    message: "OTP resent successfully"
+  });
 };
 
 export const signUpwithGmail = async (req, res, next) => {
@@ -174,7 +182,7 @@ const client = new OAuth2Client();
 }
   const access_token = GenerateToken({
     payload:{ id: user._id, email:user.email },
-    secret_key:SECRET_KEY,
+    secret_key: ACCESS_SECRET_KEY,
     options:{
         expiresIn: "1h" 
     } 
@@ -219,11 +227,12 @@ export const signIn = async (req, res, next) => {
 user.failedAttempts = 0;
 await user.save();
 
-if (user.isTwoStepEnabled) {
+if (user.isTwoStepEnabled === true)  {
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
   user.otp = otp;
   user.otpExpires = Date.now() + 5 * 60 * 1000;
+  user.loginOTP = true;
 
   await user.save();
 
@@ -252,14 +261,38 @@ if (user.isTwoStepEnabled) {
   successResponse({ res, message: "Successful Sign in", data: {access_token,refresh_token} });
 };
 
-export const enable2FA = async (req, res, next) => {
+export const sendEnable2FAOtp = async (req, res, next) => {
 
-  req.user.isTwoStepEnabled = true
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-  await req.user.save()
+  req.user.otp = otp;
+  req.user.otpExpires = Date.now() + 5 * 60 * 1000;
 
-  successResponse({ res, message: "2FA Enabled" })
-}
+  await req.user.save();
+
+  await sendOTPEmail({ to: req.user.email, otp });
+
+  successResponse({ res, message: "OTP sent to enable 2FA" });
+};
+
+export const verifyEnable2FA = async (req, res, next) => {
+  const { otp } = req.body;
+
+  if (
+    req.user.otp !== otp ||
+    req.user.otpExpires < Date.now()
+  ) {
+    throw new Error("Invalid or expired OTP");
+  }
+
+  req.user.isTwoStepEnabled = true;
+  req.user.otp = null;
+  req.user.otpExpires = null;
+
+  await req.user.save();
+
+  successResponse({ res, message: "2FA enabled successfully" });
+};
 
 export const confirmLogin = async (req, res, next) => {
   const { email, otp } = req.body;
@@ -269,14 +302,29 @@ export const confirmLogin = async (req, res, next) => {
     filter: { email }
   });
 
-  if (!user || user.otp !== otp || user.otpExpires < Date.now()) {
+  // 1. check user exists
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  // 2. check login request
+  if (!user.loginOTP) {
+    throw new Error("No login request found");
+  }
+
+  // 3. check OTP
+  if (user.otp !== otp || user.otpExpires < Date.now()) {
     throw new Error("Invalid or expired OTP");
   }
 
+  // 4. reset values
   user.otp = null;
   user.otpExpires = null;
+  user.loginOTP = false; 
+
   await user.save();
 
+  // 5. generate tokens
   const jwtid = randomUUID();
 
   const access_token = GenerateToken({
@@ -304,6 +352,54 @@ export const confirmLogin = async (req, res, next) => {
   });
 };
 
+export const forgetPassword = async (req, res, next) => {
+  const { email } = req.body;
+
+  const user = await db_service.findOne({
+    model: userModel,
+    filter: { email }
+  });
+
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+  user.otp = otp;
+  user.otpExpires = Date.now() + 5 * 60 * 1000;
+
+  await user.save();
+
+  await sendOTPEmail({ to: email, otp });
+
+  successResponse({ res, message: "OTP sent to email" });
+};
+
+export const resetPassword = async (req, res, next) => {
+  const { email, otp, newPassword } = req.body;
+
+  const user = await db_service.findOne({
+    model: userModel,
+    filter: { email }
+  });
+
+  if (
+    !user ||
+    user.otp !== otp ||
+    user.otpExpires < Date.now()
+  ) {
+    throw new Error("Invalid or expired OTP");
+  }
+
+  user.password = Hash({ plainText: newPassword });
+  user.otp = null;
+  user.otpExpires = null;
+
+  await user.save();
+
+  successResponse({ res, message: "Password reset successful" });
+};
 
 export const getProfile = async (req, res, next) => {
   

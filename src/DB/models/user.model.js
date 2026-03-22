@@ -37,24 +37,24 @@ const userSchema = new mongoose.Schema({
     trim: true
   },
   age: {
-    type: Number,
-    function () {
-      return this.provider !== providerEnum.google;
-    },
-    min: 20,
-    max: 60
+  type: Number,
+  required: function () {
+    return this.provider !== providerEnum.google;
   },
+  min: 20,
+  max: 60
+},
   gender: {
     type: String,
     enum: Object.values(genderEnum),
     default: genderEnum.male
   },
   phone: {
-    type: String,
-    function () {
-      return this.provider !== providerEnum.google;
-    }
-  },
+  type: String,
+  required: function () {
+    return this.provider !== providerEnum.google;
+  }
+},
   profilePicture:{
     secure_url:String,
     public_id:String
@@ -79,13 +79,29 @@ isTwoStepEnabled: {
 },
 otp: String,
 otpExpires: Date,
+loginOTP: {
+  type: Boolean,
+  default: false
+},
 gallery:[
 {
 secure_url:String,
 public_id:String
 }
 ],   
-  confirmed: Boolean,
+  confirmed: {
+  type: Boolean,
+  default: false
+},
+
+expiresAt: {
+  type: Date,
+  default: function () {
+    if (this.confirmed) return null;
+    return new Date(Date.now() + 24 * 60 * 60 * 1000);
+  },
+  expires: 0
+},
   provider: {
     type: String,
     enum: Object.values(providerEnum),

@@ -20,11 +20,14 @@ userRouter.post(
 
 userRouter.post("/signup/gmail",US.signUpwithGmail)
 userRouter.post("/signin",validation(UV.signInSchema),US.signIn)
-userRouter.patch("/enable-2fa", authentication, US.enable2FA)
+userRouter.patch("/2fa/send", US.sendEnable2FAOtp);
+userRouter.patch("/2fa/verify", US.verifyEnable2FA);
 userRouter.post("/confirm-login", US.confirmLogin)
+userRouter.post("/forget-password", US.forgetPassword);
+userRouter.post("/reset-password", US.resetPassword);
 userRouter.get("/refresh-token",US.refreshToken)
 userRouter.get("/profile", authentication, US.getProfile);
-userRouter.patch("/update-profile",validation(UV.updateProfileSchema) ,authentication, US.updateProfile);
+userRouter.patch("/update-profile",authentication,validation(UV.updateProfileSchema) , US.updateProfile);
 userRouter.patch("/update-password",authentication,validation(UV.updatePasswordSchema) , US.updatePassword);
 userRouter.get("/share-profile/:id",authentication,validation(UV.shareProfileSchema), US.shareProfile);
 userRouter.post("/logout", authentication, US.logout);
