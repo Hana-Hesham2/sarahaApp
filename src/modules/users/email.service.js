@@ -1,21 +1,17 @@
-// import nodemailer from "nodemailer";
+import nodemailer from "nodemailer";
 
-// const transporter = nodemailer.createTransport({
-//   service: "gmail",
-//   auth: {
-//     user: "your.email@gmail.com",
-//     pass: "your_email_password_or_app_password",
-//   },
-// });
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: "your.email@gmail.com",
+    pass: "the_app_password_from_google",
+  },
+});
 
-// export const sendOTPEmail = async ({ to, otp }) => {
-//   try {
-//     const mailOptions = {
-//       from: "your.email@gmail.com",
-//       to,
-//       subject: "Your Saraha OTP",
-//       text: `Your OTP code is: ${otp}`,
-//     };
+
+export const sendOTPEmail = async ({ to, otp }) => {
+  console.log(`OTP for ${to} is: ${otp}`); 
+};
 
 //     const info = await transporter.sendMail(mailOptions);
 //     console.log("Email sent:", info.response);

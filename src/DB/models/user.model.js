@@ -68,6 +68,17 @@ const userSchema = new mongoose.Schema({
 type:Number,
 default:0
 },
+failedAttempts: {
+  type: Number,
+  default: 0
+},
+banUntil: Date,
+isTwoStepEnabled: {
+  type: Boolean,
+  default: false
+},
+otp: String,
+otpExpires: Date,
 gallery:[
 {
 secure_url:String,

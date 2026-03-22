@@ -9,12 +9,51 @@ import jwt from "jsonwebtoken";
 import {OAuth2Client} from 'google-auth-library';
 import { ACCESS_SECRET_KEY, SALT_ROUNDS, REFRESH_SECRET_KEY,PREFIX } from "../../../config/config.service.js"
 import cloudinary from "../../common/utils/cloudinary.js"
-// import { sendOTPEmail } from "./email.service.js";
 import {randomUUID} from "crypto"
 import revokeTokenModel from "../../DB/models/revokeToken.model.js"
+// import { sendOTPEmail } from "./email.service.js"
+
+export const sendOTPEmail = async ({ to, otp }) => {
+  console.log(` OTP for ${to}: ${otp}`); 
+};
+// const sendEmailOtp = async ({ email, subject }) => {
+//   const isBlocked = await ttl(blocked_otp_key({ email }));
+//   if (isBlocked > 0) {
+//     throw new Error(`you blocked please try again after ${isBlocked} seconds`);
+//   }
+
+//   const ttlOtp = await ttl(otp_key({ email, subject }));
+//   if (ttlOtp > 0) {
+//     throw new Error(
+//       `you already have otp not expired yet please try again after ${ttlOtp} seconds`
+//     );
+//   }
+
+//   if ((await get(max_otp_key({ email }))) >= 3) {
+//     await setValue({
+//       key: blocked_otp_key({ email }),
+//       value: 1,
+//       ttl: 15 * 60,
+//     });
+//     throw new Error("you exceed maximum number of trials");
+//   }
+
+//   const otp = await generateOtp();
+
+//   await sendOTPEmail({ to: email, otp }); 
+
+//   await setValue({
+//     key: otp_key({ email, subject }),
+//     value: Hash({ plainText: `${otp}` }),
+//     ttl: 60 * 2,
+//   });
+
+//   await incr(max_otp_key({ email }));
+// };
+
 
 export const signUp = async (req, res, next) => {
-  const { userName, email, password, confirmPassword, age, gender, phone } = req.body;
+  const { userName, email, password, confirmPassword, age, gender, phone} = req.body;
   console.log(req.file,"after");
 
   if(!req.file){
@@ -65,7 +104,8 @@ export const signUp = async (req, res, next) => {
       gender,
       phone: phone ? encrypt(phone) : null,
       profilePicture:{secure_url,public_id},
-      coverPicture: []
+      coverPicture: [],
+      role: rolesEnum.user
     },
   });
 
@@ -74,6 +114,30 @@ export const signUp = async (req, res, next) => {
 // // //   await sendOTPEmail({ to: email, otp });
 
   successResponse({ res, status: 201, message: "Successful Sign Up", data:user });
+};
+
+export const resendOtp = async (req, res, next) => {
+
+  const { email } = req.body;
+
+  const user = await db_service.findOne({
+    model: userModel,
+    filter: {
+      email,
+      provider: providerEnum.system,
+    },
+  });
+
+  if (!user) {
+    throw new Error("user not exist");
+  }
+
+  await sendEmailOtp({
+    email,
+    subject: "confirmEmail" 
+  });
+
+  return successResponse({ res });
 };
 
 export const signUpwithGmail = async (req, res, next) => {
@@ -133,10 +197,40 @@ export const signIn = async (req, res, next) => {
     throw new Error("User doesn't exist");
   }
 
+  if (user.banUntil && user.banUntil > Date.now()) {
+  throw new Error("You are banned for 5 minutes");
+}
 
-  if (!Compare({ plainText: password, cipherText: user.password })){
-    throw new Error("Invalid Password",{cause:400})
+
+  if (!Compare({ plainText: password, cipherText: user.password })) {
+
+  user.failedAttempts += 1;
+
+  if (user.failedAttempts >= 5) {
+    user.banUntil = Date.now() + 5 * 60 * 1000;
+    user.failedAttempts = 0;
   }
+
+  await user.save();
+
+  throw new Error("Invalid Password", { cause: 400 });
+}
+
+user.failedAttempts = 0;
+await user.save();
+
+if (user.isTwoStepEnabled) {
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+  user.otp = otp;
+  user.otpExpires = Date.now() + 5 * 60 * 1000;
+
+  await user.save();
+
+  await sendOTPEmail({ to: user.email, otp }); 
+
+  return successResponse({ res, message: "OTP sent" });
+}
   
   const jwtid = randomUUID()
 
@@ -156,6 +250,54 @@ export const signIn = async (req, res, next) => {
 });
     
   successResponse({ res, message: "Successful Sign in", data: {access_token,refresh_token} });
+};
+
+export const enable2FA = async (req, res, next) => {
+
+  req.user.isTwoStepEnabled = true
+
+  await req.user.save()
+
+  successResponse({ res, message: "2FA Enabled" })
+}
+
+export const confirmLogin = async (req, res, next) => {
+  const { email, otp } = req.body;
+
+  const user = await db_service.findOne({
+    model: userModel,
+    filter: { email }
+  });
+
+  if (!user || user.otp !== otp || user.otpExpires < Date.now()) {
+    throw new Error("Invalid or expired OTP");
+  }
+
+  
+  user.otp = null;
+  user.otpExpires = null;
+  await user.save();
+
+  
+  const jwtid = randomUUID();
+
+  const access_token = GenerateToken({
+    payload: { id: user._id, email: user.email },
+    secret_key: ACCESS_SECRET_KEY,
+    options: { expiresIn: 60 * 30, jwtid } 
+  });
+
+  const refresh_token = GenerateToken({
+    payload: { id: user._id, email: user.email },
+    secret_key: REFRESH_SECRET_KEY,
+    options: { expiresIn: "1y", jwtid } 
+  });
+
+  successResponse({
+    res,
+    message: "OTP confirmed, login successful",
+    data: { access_token, refresh_token }
+  });
 };
 
 
@@ -204,24 +346,32 @@ export const updatePassword = async (req, res, next) => {
 };
 
 export const shareProfile = async (req, res, next) => {
-  const {id}=req.params
+  const { id } = req.params;
 
   const user = await db_service.findById({
-  model:userModel,
-  id,
-  select:"-password"
-})
+    model: userModel,
+    id,
+    select: "-password"
+  });
 
-user.visitCount += 1
-
-await user.save()
-  if (!user){
-    throw new Error("User not found yet")
+  if (!user) {
+    throw new Error("User not found yet");
   }
-  user.phone=decrypt(user.phone)
-  
-  
-  successResponse({ res, message: "Done", data:user });
+
+  user.visitCount += 1;
+  await user.save();
+
+  if (user.phone) {
+    user.phone = decrypt(user.phone);
+  }
+
+  const data = { ...user._doc };
+
+if (req.user?.role !== rolesEnum.admin && req.user._id.toString() !== user._id.toString()) {
+  delete data.visitCount;
+}
+
+successResponse({ res, message: "Done", data });
 };
 
 

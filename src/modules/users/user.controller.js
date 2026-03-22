@@ -20,11 +20,13 @@ userRouter.post(
 
 userRouter.post("/signup/gmail",US.signUpwithGmail)
 userRouter.post("/signin",validation(UV.signInSchema),US.signIn)
+userRouter.patch("/enable-2fa", authentication, US.enable2FA)
+userRouter.post("/confirm-login", US.confirmLogin)
 userRouter.get("/refresh-token",US.refreshToken)
 userRouter.get("/profile", authentication, US.getProfile);
 userRouter.patch("/update-profile",validation(UV.updateProfileSchema) ,authentication, US.updateProfile);
 userRouter.patch("/update-password",authentication,validation(UV.updatePasswordSchema) , US.updatePassword);
-userRouter.get("/share-profile/:id",validation(UV.shareProfileSchema), US.shareProfile);
+userRouter.get("/share-profile/:id",authentication,validation(UV.shareProfileSchema), US.shareProfile);
 userRouter.post("/logout", authentication, US.logout);
 userRouter.patch("/upload-profile-picture",authentication,multer_local({ custom_types: multer_enum.image }).single("image"),US.uploadProfilePicture);
 userRouter.delete("/delete-profile-picture",authentication,US.deleteProfilePicture);
